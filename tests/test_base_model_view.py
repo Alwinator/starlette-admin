@@ -122,6 +122,7 @@ class TestView:
 
     def test_hidden_from_list_still_in_field_list(self):
         """Fields with hidden_from_list=True should still appear in get_fields_list."""
+
         class PostView(DummyModelView):
             model = Post
             fields = (
@@ -137,6 +138,7 @@ class TestView:
 
     def test_hidden_from_list_excluded_field_not_in_list(self):
         """Fields with both exclude_from_list and hidden_from_list should be excluded."""
+
         class PostView(DummyModelView):
             model = Post
             fields = (
@@ -152,6 +154,7 @@ class TestView:
 
     def test_merged_datatables_options_hidden_columns(self):
         """_merged_datatables_options should generate columnDefs for hidden_from_list fields."""
+
         class PostView(DummyModelView):
             model = Post
             fields = (
@@ -165,14 +168,15 @@ class TestView:
         view_instance = PostView()
         opts = view_instance._merged_datatables_options(None)
         assert "columnDefs" in opts
-        # content is at index 2 in list fields -> target 3 (+1 for checkbox)
-        # tags is at index 4 -> target 5
+        # content is at index 2 in list fields -> target 4 (+2 for checkbox and detail columns)
+        # tags is at index 4 -> target 6
         hidden_def = opts["columnDefs"][0]
         assert hidden_def["visible"] is False
-        assert hidden_def["targets"] == [3, 5]
+        assert hidden_def["targets"] == [4, 6]
 
     def test_merged_datatables_options_no_hidden(self):
         """_merged_datatables_options should return empty dict when no hidden fields."""
+
         class PostView(DummyModelView):
             model = Post
             fields = (
@@ -187,6 +191,7 @@ class TestView:
 
     def test_merged_datatables_options_preserves_user_options(self):
         """_merged_datatables_options should merge with existing datatables_options."""
+
         class PostView(DummyModelView):
             model = Post
             fields = (
@@ -200,10 +205,11 @@ class TestView:
         opts = view_instance._merged_datatables_options(None)
         assert opts["pageLength"] == 50
         assert "columnDefs" in opts
-        assert opts["columnDefs"][0]["targets"] == [3]
+        assert opts["columnDefs"][0]["targets"] == [4]
 
     def test_merged_datatables_options_merges_existing_column_defs(self):
         """_merged_datatables_options should append to existing columnDefs."""
+
         class PostView(DummyModelView):
             model = Post
             fields = (
@@ -219,4 +225,4 @@ class TestView:
         opts = view_instance._merged_datatables_options(None)
         assert len(opts["columnDefs"]) == 2
         assert opts["columnDefs"][0] == {"className": "text-center", "targets": [1]}
-        assert opts["columnDefs"][1] == {"visible": False, "targets": [3]}
+        assert opts["columnDefs"][1] == {"visible": False, "targets": [4]}
