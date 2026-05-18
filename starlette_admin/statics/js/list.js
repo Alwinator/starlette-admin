@@ -464,9 +464,34 @@ $(function () {
 
       // Rebuild SearchBuilder from URL state and force redraw
       if (loadedSearchBuilder) {
+        // Read the desired page/columns from URL params before rebuild resets them
+        var sbParams = Qs.parse(location.search, { ignoreQueryPrefix: true });
+        var sbPage = isNaN(parseInt(sbParams?.page)) ? 0 : parseInt(sbParams.page) - 1;
+        var sbHiddenIdx = [];
+        if (sbParams?.columns) {
+          sbHiddenIdx = sbParams.columns.split(",").map(function (v) { return parseInt(v); }).filter(function (v) { return !isNaN(v); });
+        }
+
         table.searchBuilder.rebuild(loadedSearchBuilder);
-        table.draw();
         loadedSearchBuilder = null;
+
+        // After the rebuild-triggered draw completes, restore page & column visibility
+        table.one('draw', function () {
+          // Restore hidden columns
+          if (sbHiddenIdx.length > 0) {
+            sbHiddenIdx.forEach(function (ci) {
+              table.column(ci + 2).visible(false, false);
+            });
+            table.columns.adjust();
+          }
+          // Restore page (use setTimeout to avoid draw-inside-draw)
+          if (sbPage > 0 && table.page() !== sbPage) {
+            setTimeout(function () {
+              table.page(sbPage).draw(false);
+            }, 0);
+          }
+        });
+        table.draw();
       }
 
       // Append returnTo to the "New" create button (use path+search, not full URL, to pass server-side validation)
