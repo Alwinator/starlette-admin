@@ -8,6 +8,12 @@ $(function () {
   /* searchBuilder state loaded from URL, to be applied after init */
   var loadedSearchBuilder = null;
 
+  /* hidden column indices (0-based from dt_columns) loaded from URL */
+  var loadedHiddenColumns = [];
+
+  /* flag to suppress stateSaveCallback during state restoration */
+  var isRestoring = false;
+
   /*
     contains all fields including nested fields inside all CollectionField.
     Each nested field name is prefixed by it parent CollectionField name (ex: 'category.name')
@@ -464,34 +470,41 @@ $(function () {
 
       // Rebuild SearchBuilder from URL state and force redraw
       if (loadedSearchBuilder) {
-        // Read the desired page/columns from URL params before rebuild resets them
+        isRestoring = true;
+        // Read the desired page from URL params before rebuild resets it
         var sbParams = Qs.parse(location.search, { ignoreQueryPrefix: true });
         var sbPage = isNaN(parseInt(sbParams?.page)) ? 0 : parseInt(sbParams.page) - 1;
-        var sbHiddenIdx = [];
-        if (sbParams?.columns) {
-          sbHiddenIdx = sbParams.columns.split(",").map(function (v) { return parseInt(v); }).filter(function (v) { return !isNaN(v); });
-        }
 
         table.searchBuilder.rebuild(loadedSearchBuilder);
         loadedSearchBuilder = null;
 
-        // After the rebuild-triggered draw completes, restore page & column visibility
+        // After the rebuild-triggered draw completes, restore page & columns
         table.one('draw', function () {
-          // Restore hidden columns
-          if (sbHiddenIdx.length > 0) {
-            sbHiddenIdx.forEach(function (ci) {
+          setTimeout(function () {
+            // Restore hidden columns
+            loadedHiddenColumns.forEach(function (ci) {
               table.column(ci + 2).visible(false, false);
             });
-            table.columns.adjust();
-          }
-          // Restore page (use setTimeout to avoid draw-inside-draw)
-          if (sbPage > 0 && table.page() !== sbPage) {
-            setTimeout(function () {
+            if (loadedHiddenColumns.length > 0) table.columns.adjust();
+            loadedHiddenColumns = [];
+
+            // Restore page
+            if (sbPage > 0 && table.page() !== sbPage) {
               table.page(sbPage).draw(false);
-            }, 0);
-          }
+            }
+
+            isRestoring = false;
+          }, 0);
         });
         table.draw();
+      } else if (loadedHiddenColumns.length > 0) {
+        // No searchBuilder but columns need restoring (shouldn't normally happen
+        // since stateLoadCallback returns column state, but just in case)
+        loadedHiddenColumns.forEach(function (ci) {
+          table.column(ci + 2).visible(false, false);
+        });
+        table.columns.adjust();
+        loadedHiddenColumns = [];
       }
 
       // Append returnTo to the "New" create button (use path+search, not full URL, to pass server-side validation)
@@ -523,6 +536,7 @@ $(function () {
     },
 
     stateSaveCallback: function (settings, data) {
+      if (isRestoring) return;
       let page = 0;
       try {
         page = (data?.page ?? data?.start / data?.length ?? 0) + 1;
@@ -606,6 +620,9 @@ $(function () {
       if (params?.searchBuilder) {
         loadedSearchBuilder = JSON.parse(params.searchBuilder);
       }
+
+      // Store hidden columns for restoration in initComplete
+      loadedHiddenColumns = hiddenIndices;
 
       var state = {
         time: Date.now(),
