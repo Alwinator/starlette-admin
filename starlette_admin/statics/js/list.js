@@ -469,8 +469,8 @@ $(function () {
         loadedSearchBuilder = null;
       }
 
-      // Append returnTo to the "New" create button
-      var returnTo = encodeURIComponent(location.href);
+      // Append returnTo to the "New" create button (use path+search, not full URL, to pass server-side validation)
+      var returnTo = encodeURIComponent(location.pathname + location.search);
       $("a[href*='/create']").each(function () {
         var href = $(this).attr("href");
         if (href && href.indexOf("returnTo") === -1) {
@@ -484,8 +484,8 @@ $(function () {
     drawCallback: function (settings) {
       actionManager.initNoConfirmationActions();
 
-      // Append returnTo to edit/create links so navigation back preserves list state
-      var returnTo = encodeURIComponent(location.href);
+      // Append returnTo to edit/create links so navigation back preserves list state (use path+search, not full URL)
+      var returnTo = encodeURIComponent(location.pathname + location.search);
       $(".row-actions-container a[href*='/edit/']").each(function () {
         var href = $(this).attr("href");
         if (href && href.indexOf("returnTo") === -1) {
