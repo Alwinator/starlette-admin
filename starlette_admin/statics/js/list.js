@@ -5,6 +5,9 @@ $(function () {
   /* list of primary keys of selected rows */
   var selectedRows = [];
 
+  /* searchBuilder state loaded from URL, to be applied after init */
+  var loadedSearchBuilder = null;
+
   /*
     contains all fields including nested fields inside all CollectionField.
     Each nested field name is prefixed by it parent CollectionField name (ex: 'category.name')
@@ -458,9 +461,40 @@ $(function () {
         .buttons("pageLength", null)
         .container()
         .appendTo("#pageLength_container");
+
+      // Rebuild SearchBuilder from URL state and force redraw
+      if (loadedSearchBuilder) {
+        table.searchBuilder.rebuild(loadedSearchBuilder);
+        table.draw();
+        loadedSearchBuilder = null;
+      }
+
+      // Append returnTo to the "New" create button
+      var returnTo = encodeURIComponent(location.href);
+      $("a[href*='/create']").each(function () {
+        var href = $(this).attr("href");
+        if (href && href.indexOf("returnTo") === -1) {
+          $(this).attr(
+            "href",
+            href + (href.indexOf("?") === -1 ? "?" : "&") + "returnTo=" + returnTo
+          );
+        }
+      });
     },
     drawCallback: function (settings) {
       actionManager.initNoConfirmationActions();
+
+      // Append returnTo to edit/create links so navigation back preserves list state
+      var returnTo = encodeURIComponent(location.href);
+      $(".row-actions-container a[href*='/edit/']").each(function () {
+        var href = $(this).attr("href");
+        if (href && href.indexOf("returnTo") === -1) {
+          $(this).attr(
+            "href",
+            href + (href.indexOf("?") === -1 ? "?" : "&") + "returnTo=" + returnTo
+          );
+        }
+      });
     },
 
     stateSaveCallback: function (settings, data) {
@@ -468,6 +502,17 @@ $(function () {
       try {
         page = (data?.page ?? data?.start / data?.length ?? 0) + 1;
       } catch (e) {}
+
+      // Determine hidden columns
+      var hiddenCols = [];
+      if (data?.columns) {
+        data.columns.forEach(function (col, idx) {
+          if (idx >= 2 && col.visible === false) {
+            hiddenCols.push(idx - 2);
+          }
+        });
+      }
+
       const params = {
         page: page,
         page_size: data?.length,
@@ -482,6 +527,7 @@ $(function () {
           data?.searchBuilder && !$.isEmptyObject(data?.searchBuilder)
             ? JSON.stringify(data?.searchBuilder)
             : undefined,
+        columns: hiddenCols.length > 0 ? hiddenCols.join(",") : undefined,
       };
 
       const query = Qs.stringify(params, { encode: false, indices: false });
@@ -513,6 +559,29 @@ $(function () {
         });
       }
 
+      // Parse hidden columns
+      var columns = [];
+      var hiddenIndices = [];
+      if (params?.columns) {
+        hiddenIndices = params.columns
+          .split(",")
+          .map((v) => parseInt(v))
+          .filter((v) => !isNaN(v));
+      }
+      // Build columns array (offset by 2 for checkbox + row actions columns)
+      var totalCols = dt_columns.length + 2;
+      for (var ci = 0; ci < totalCols; ci++) {
+        columns.push({
+          visible: ci < 2 ? true : !hiddenIndices.includes(ci - 2),
+          search: { search: "", smart: true, regex: false, caseInsensitive: true },
+        });
+      }
+
+      // Store searchBuilder for later rebuild in initComplete
+      if (params?.searchBuilder) {
+        loadedSearchBuilder = JSON.parse(params.searchBuilder);
+      }
+
       var state = {
         time: Date.now(),
         length: length,
@@ -523,9 +592,8 @@ $(function () {
           regex: false,
           caseInsensitive: true,
         },
-        searchBuilder: params?.searchBuilder
-          ? JSON.parse(params?.searchBuilder)
-          : undefined,
+        searchBuilder: loadedSearchBuilder || undefined,
+        columns: columns.length > 0 ? columns : undefined,
         page: page,
         start: length * page,
       };
