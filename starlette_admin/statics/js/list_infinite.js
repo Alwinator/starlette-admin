@@ -288,6 +288,11 @@ $(function () {
   var sortCol = null;
   var sortDir = "asc";
 
+  // Hidden column indices (0-based relative to dt_columns, i.e. excluding the
+  // leading checkbox + row-actions columns). Kept in sync with the ColVis
+  // button on the hidden DataTable and applied to the visible infinite table.
+  var hiddenColumns = [];
+
   // Initialize default sort from model config
   (function () {
     for (var col in model.fieldsDefaultSort) {
@@ -349,7 +354,41 @@ $(function () {
         dom: { button: { className: "btn btn-secondary" } },
       });
       hiddenTable.buttons("main", null).container().appendTo("#btn_container");
+
+      // Restore hidden columns (from URL state) onto the hidden DataTable so the
+      // ColVis button checkboxes reflect the current state. Setting visibility
+      // fires "column-visibility.dt", which propagates to the visible table.
+      hiddenColumns.slice().forEach(function (dataIdx) {
+        hiddenTable.column(dataIdx + 2).visible(false, false);
+      });
     },
+  });
+
+  // --- Column visibility (ColVis) wiring for the infinite-scroll table ---
+  // The ColVis button toggles columns on the hidden DataTable (#dt). Mirror
+  // those changes onto the visible infinite-scroll table, whose rows are built
+  // manually and are therefore not managed by DataTables.
+  function applyColumnVisibility(colIdx, visible) {
+    // DataTables column index includes the 2 leading columns (checkbox + row
+    // actions); CSS :nth-child is 1-based, so the cell position is colIdx + 1.
+    var nth = colIdx + 1;
+    var display = visible ? "" : "none";
+    $("#infinite-thead tr th:nth-child(" + nth + ")").css("display", display);
+    $("#infinite-tbody tr").children("td:nth-child(" + nth + ")").css("display", display);
+  }
+
+  hiddenTable.on("column-visibility.dt", function (e, settings, colIdx, visible) {
+    applyColumnVisibility(colIdx, visible);
+
+    var dataIdx = colIdx - 2;
+    if (dataIdx < 0) return; // ignore the leading checkbox / row-actions columns
+
+    if (visible) {
+      hiddenColumns = hiddenColumns.filter(function (c) { return c !== dataIdx; });
+    } else if (hiddenColumns.indexOf(dataIdx) === -1) {
+      hiddenColumns.push(dataIdx);
+    }
+    saveStateToUrl();
   });
 
   // --- Fetch items for infinite scroll ---
@@ -397,7 +436,7 @@ $(function () {
     $tr.append($('<td>').html('<div class="row-actions-container" data-id="' + pk + '">' + rowActionsHtml + "</div>"));
 
     // Data columns
-    dt_columns.forEach(function (col) {
+    dt_columns.forEach(function (col, dataIdx) {
       var data = item[col.name];
       // Handle nested names (e.g. "category.name")
       if (data === undefined && col.name.indexOf(".") !== -1) {
@@ -408,7 +447,12 @@ $(function () {
         }
       }
       var rendered = col.render(data, "display", item, {});
-      $tr.append($("<td>").html(rendered));
+      var $td = $("<td>").html(rendered);
+      // Keep new rows in sync with the current column visibility state
+      if (hiddenColumns.indexOf(dataIdx) !== -1) {
+        $td.css("display", "none");
+      }
+      $tr.append($td);
     });
 
     return $tr;
@@ -639,6 +683,9 @@ $(function () {
     if (searchBuilderCriteria && !$.isEmptyObject(searchBuilderCriteria)) {
       params.searchBuilder = JSON.stringify(searchBuilderCriteria);
     }
+    if (hiddenColumns.length > 0) {
+      params.columns = hiddenColumns.join(",");
+    }
     var query = Qs.stringify(params, { encode: false, indices: false });
     history.replaceState(null, "", location.pathname + (query ? "?" + query : ""));
   }
@@ -668,6 +715,12 @@ $(function () {
         searchBuilderCriteria = JSON.parse(params.searchBuilder);
         currentWhere = extractCriteria(searchBuilderCriteria);
       } catch (e) {}
+    }
+    if (params.columns) {
+      hiddenColumns = String(params.columns)
+        .split(",")
+        .map(function (v) { return parseInt(v); })
+        .filter(function (v) { return !isNaN(v); });
     }
   }
 
