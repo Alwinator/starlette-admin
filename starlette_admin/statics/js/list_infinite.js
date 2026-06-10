@@ -47,7 +47,7 @@ $(function () {
           });
         }
         dt_fields.push(field);
-      } else {
+      } else if (!field.exclude_from_list) {
         dt_columns.push({
           name: field.name,
           data: field.name,
@@ -292,6 +292,18 @@ $(function () {
   // leading checkbox + row-actions columns). Kept in sync with the ColVis
   // button on the hidden DataTable and applied to the visible infinite table.
   var hiddenColumns = [];
+
+  // Determine initially hidden columns from hidden_from_list field attribute
+  // (mirrors the columnDefs logic from _merged_datatables_options in views.py)
+  var defaultHiddenColumns = [];
+  (function () {
+    dt_columns.forEach(function (col, idx) {
+      var field = dt_fields.find(function (f) { return f.name === col.name; });
+      if (field && field.hidden_from_list) {
+        defaultHiddenColumns.push(idx);
+      }
+    });
+  })();
 
   // Initialize default sort from model config
   (function () {
@@ -552,12 +564,13 @@ $(function () {
 
   // --- Intersection Observer for infinite loading ---
   var sentinel = document.getElementById("scroll-sentinel");
+  var scrollContainer = document.getElementById("infinite-scroll-container");
 
   function checkSentinelVisible() {
     if (isLoading || allLoaded) return;
-    var rect = sentinel.getBoundingClientRect();
-    var windowHeight = window.innerHeight || document.documentElement.clientHeight;
-    if (rect.top <= windowHeight + 400) {
+    var containerRect = scrollContainer.getBoundingClientRect();
+    var sentinelRect = sentinel.getBoundingClientRect();
+    if (sentinelRect.top <= containerRect.bottom + 400) {
       loadNextPage();
     }
   }
@@ -570,7 +583,7 @@ $(function () {
         }
       });
     },
-    { rootMargin: "400px" }
+    { root: scrollContainer, rootMargin: "400px" }
   );
   observer.observe(sentinel);
 
@@ -615,7 +628,7 @@ $(function () {
   var STORAGE_KEY = "infinite_scroll_" + location.pathname;
 
   function saveScrollPosition() {
-    var pos = window.scrollY || window.pageYOffset;
+    var pos = scrollContainer.scrollTop;
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ scrollTop: pos, skip: currentSkip }));
   }
 
@@ -630,7 +643,7 @@ $(function () {
         function loadChunk() {
           if (currentSkip >= targetSkip || allLoaded) {
             setTimeout(function () {
-              window.scrollTo(0, state.scrollTop || 0);
+              scrollContainer.scrollTop = state.scrollTop || 0;
             }, 50);
             return;
           }
@@ -644,7 +657,7 @@ $(function () {
       } else {
         // Will restore after first load
         setTimeout(function () {
-          window.scrollTo(0, state.scrollTop || 0);
+          scrollContainer.scrollTop = state.scrollTop || 0;
         }, 100);
       }
     } catch (e) {}
@@ -721,12 +734,22 @@ $(function () {
         .split(",")
         .map(function (v) { return parseInt(v); })
         .filter(function (v) { return !isNaN(v); });
+    } else if (defaultHiddenColumns.length > 0) {
+      hiddenColumns = defaultHiddenColumns.slice();
     }
   }
 
   // --- Initialize ---
   loadStateFromUrl();
   updateSortIndicators();
+
+  // Apply initial column visibility to the thead (the event-based approach in
+  // initComplete handles the hidden DataTable, but we also need to hide thead
+  // cells immediately so they don't flash before initComplete fires).
+  hiddenColumns.forEach(function (dataIdx) {
+    var nth = dataIdx + 2 + 1; // +2 for checkbox/row-actions cols, +1 for 1-based nth-child
+    $("#infinite-thead tr th:nth-child(" + nth + ")").css("display", "none");
+  });
 
   // Try to restore scroll position (loads more items if needed)
   var restored = restoreScrollPosition();
